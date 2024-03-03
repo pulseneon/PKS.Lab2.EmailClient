@@ -1,48 +1,55 @@
 import email
-import email.header
-import email.utils
-import imaplib
 import os
+import poplib
+import re
+from email.parser import Parser
 
 import settings
 from client_reader import ClientReader
 
-class IMAPClient(ClientReader):
-    server = settings.imap_server
-    port = settings.imap_port
+
+class POP3Client(ClientReader):
+    server = settings.pop3_server
+    port = settings.pop3_port
     username = settings.email_login
     password = settings.email_password
 
-    """ Получить все письма с почты """
     def __get_all_emails(self):
-        imap = imaplib.IMAP4_SSL(self.server)
-        imap.login(self.username, self.password)
-        imap.select("INBOX")
+        pop3_server = poplib.POP3_SSL(self.server, self.port)
+        pop3_server.user(self.username)
+        pop3_server.pass_(self.password)
 
-        status, email_ids = imap.search(None, "ALL")
-        if status == "OK":
-            emails = []
-            for email_id in email_ids[0].split():
-                status, message_data = imap.fetch(email_id, '(RFC822)')
-                if status == 'OK':
-                    emails.append(email.message_from_bytes(message_data[0][1]))
-            return emails
-        else:
-            return []
+        emails = []
+        num_messages = len(pop3_server.list()[0])
+
+        for i in range(1, num_messages):
+            try:
+                response, lines, octets = pop3_server.retr(i)
+                message_info = pop3_server.retr(i)
+                message_data = b'\r\n'.join(lines).decode('utf-8')
+
+                email = Parser().parsestr(message_data)
+
+                emails.append(email)
+            except Exception as e:
+                pass
+
+        pop3_server.quit()
+        return emails
 
     """ Найти письмо по его порядковому номеру """
     def __find_email_by_idx(self, idx) -> str:
         messages = self.__get_all_emails()
         return messages[idx]
 
-    """ Вывести письма """
     def print_all_emails(self):
         messages = self.__get_all_emails()
         for idx, message in enumerate(messages):
-            path = message["Return-path"]
-            header = email.header.decode_header(message["Subject"])[0][0].decode()
-            print(f'\nПисьмо #{idx}: \nОт: {path}\nТема: {header}\n')
+            # Extract relevant information from message object
+            sender = re.sub(r'"(.*?)"', '', message.get("From")).replace('\t', '')
+            subject = decode_subject(message.get("Subject"))
 
+            print(f'\nПисьмо #{idx}: \nОт: {sender}\nТема: {subject}\n')
 
     def open_email(self, email_id: str):
         message = self.__find_email_by_idx(email_id)
@@ -69,5 +76,9 @@ class IMAPClient(ClientReader):
                     body = body.decode()
                 print(body)
 
-    def send_email(self):
-        pass
+def decode_subject(subject):
+    if subject:
+        decoded_subject = email.header.decode_header(subject)[0][0].decode()
+        return decoded_subject
+    else:
+        return "[Without Subject]"

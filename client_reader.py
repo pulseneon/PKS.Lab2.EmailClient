@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-class Client(ABC):
+class ClientReader(ABC):
     @abstractmethod
     def print_all_emails(self):
         pass
